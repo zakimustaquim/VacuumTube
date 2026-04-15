@@ -2,6 +2,8 @@ const configManager = require('../config')
 const functions = require('../util/functions')
 const ui = require('../util/ui')
 const localeProvider = require('../util/localeProvider')
+const rcMod = require('../util/resolveCommandModifiers')
+const xhrModifiers = require('../util/xhrModifiers')
 
 const config = configManager.get()
 
@@ -14,6 +16,10 @@ const playbackRateSteps = [
     3.5, 4
 ]
 const videoSelector = '.html5-main-video'
+const playbackRateButtonTypes = [
+    'TRANSPORT_CONTROLS_BUTTON_TYPE_VT_PLAYBACK_RATE_DECREASE',
+    'TRANSPORT_CONTROLS_BUTTON_TYPE_VT_PLAYBACK_RATE_INCREASE'
+]
 
 module.exports = async () => {
     await localeProvider.waitUntilAvailable()
@@ -49,6 +55,42 @@ module.exports = async () => {
 
     function showPlaybackRateToast(rate) {
         ui.toast('VacuumTube', `${locale.general.playback_rate}: ${formatPlaybackRate(rate)}x`)
+    }
+
+    function createPlaybackRateEndpoint(action) {
+        return {
+            vtPlaybackRateAction: action
+        }
+    }
+
+    function createPlaybackRateButton(templateAction, iconType, action, accessibilityLabel) {
+        const templateRenderer = templateAction?.button?.buttonRenderer
+        if (!templateRenderer) return null
+
+        const buttonRenderer = JSON.parse(JSON.stringify(templateRenderer))
+        delete buttonRenderer.text
+        delete buttonRenderer.secondaryText
+
+        buttonRenderer.icon = {
+            iconType
+        }
+        buttonRenderer.title = {
+            simpleText: accessibilityLabel
+        }
+        buttonRenderer.accessibility = {
+            accessibilityData: {
+                label: accessibilityLabel
+            }
+        }
+        buttonRenderer.command = createPlaybackRateEndpoint(action)
+        buttonRenderer.navigationEndpoint = createPlaybackRateEndpoint(action)
+
+        return {
+            type: `TRANSPORT_CONTROLS_BUTTON_TYPE_VT_PLAYBACK_RATE_${action.toUpperCase()}`,
+            button: {
+                buttonRenderer
+            }
+        }
     }
 
     function applyPlaybackRate(video = activeVideo) {
@@ -91,6 +133,18 @@ module.exports = async () => {
         setDesiredPlaybackRate(actualRate)
     }
 
+    function decreasePlaybackRate() {
+        updatePlaybackRate(findNextPlaybackRate(-1))
+    }
+
+    function increasePlaybackRate() {
+        updatePlaybackRate(findNextPlaybackRate(1))
+    }
+
+    function resetPlaybackRate() {
+        updatePlaybackRate(1)
+    }
+
     function attachToVideo(video) {
         if (activeVideo === video) return
 
@@ -112,6 +166,52 @@ module.exports = async () => {
 
     await functions.waitForSelector(videoSelector)
     attachToVideo(document.querySelector(videoSelector))
+
+    window.vtPlaybackRate = {
+        get: getDesiredPlaybackRate,
+        set: updatePlaybackRate,
+        reset: resetPlaybackRate,
+        increase: increasePlaybackRate,
+        decrease: decreasePlaybackRate
+    }
+
+    rcMod.addInputModifier((command) => {
+        if (!command?.vtPlaybackRateAction) return command
+
+        if (command.vtPlaybackRateAction === 'decrease') {
+            decreasePlaybackRate()
+        } else if (command.vtPlaybackRateAction === 'increase') {
+            increasePlaybackRate()
+        } else if (command.vtPlaybackRateAction === 'reset') {
+            resetPlaybackRate()
+        }
+
+        return false;
+    })
+
+    xhrModifiers.addResponseModifier(async (url, text) => {
+        if (!url.startsWith('/youtubei/v1/next')) return;
+
+        const json = JSON.parse(text)
+        const engagementActions = json.transportControls?.transportControlsRenderer?.engagementActions
+        if (!Array.isArray(engagementActions)) return;
+
+        if (engagementActions.some((action) => playbackRateButtonTypes.includes(action?.type))) {
+            return;
+        }
+
+        const templateAction = engagementActions.find((action) => action?.button?.buttonRenderer)
+        if (!templateAction) return;
+
+        const decreaseButton = createPlaybackRateButton(templateAction, 'REMOVE', 'decrease', locale.general.playback_rate_decrease)
+        const increaseButton = createPlaybackRateButton(templateAction, 'ADD', 'increase', locale.general.playback_rate_increase)
+        if (!decreaseButton || !increaseButton) return;
+
+        const insertionIndex = Math.min(engagementActions.length, 3)
+        engagementActions.splice(insertionIndex, 0, decreaseButton, increaseButton)
+
+        return JSON.stringify(json);
+    })
 
     const observer = new MutationObserver(() => {
         attachToVideo(document.querySelector(videoSelector))
@@ -138,17 +238,17 @@ module.exports = async () => {
             e.preventDefault()
             e.stopPropagation()
             e.stopImmediatePropagation()
-            updatePlaybackRate(findNextPlaybackRate(-1))
+            decreasePlaybackRate()
         } else if (e.key === ']' || e.key === '}' || e.key === '>') {
             e.preventDefault()
             e.stopPropagation()
             e.stopImmediatePropagation()
-            updatePlaybackRate(findNextPlaybackRate(1))
+            increasePlaybackRate()
         } else if (e.key === '\\' || e.key === '|') {
             e.preventDefault()
             e.stopPropagation()
             e.stopImmediatePropagation()
-            updatePlaybackRate(1)
+            resetPlaybackRate()
         }
     }, true)
 }

@@ -2,6 +2,8 @@
     "general": {
         "video_copied": "Video link copied to clipboard",
         "playback_rate": "Playback speed",
+        "playback_rate_increase": "Increase playback speed",
+        "playback_rate_decrease": "Decrease playback speed",
         "dislikes": "Dislikes",
         "steam_controller_notice": "External controller isn't detected? Try the steamdeck-input-disabler plugin from Decky.",
         "encryption_error": {
