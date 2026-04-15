@@ -12,6 +12,7 @@ let config = {}
 
 const defaults = {
     volume: 100, //video volume (0-100)
+    playback_rate: 1, //video playback speed
     adblock: true, //block ads
     sponsorblock: false, //enable sponsorblock
     sponsorblock_uuid: crypto.randomUUID(), //sponsorblock wants to track this per user so you can ask it for stats later

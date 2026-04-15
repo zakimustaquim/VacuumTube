@@ -111,6 +111,12 @@ VacuumTube exposes a few extra input mappings for actions that may be desired on
   - Decrease volume
 - `M`
   - Toggle mute
+- `]` or `>`
+  - Increase playback speed
+- `[` or `<`
+  - Decrease playback speed
+- `\`
+  - Reset playback speed to `1x`
 
 ## Custom CSS (Userstyles)
 
