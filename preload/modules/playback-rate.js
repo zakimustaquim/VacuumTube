@@ -1,6 +1,6 @@
 const configManager = require('../config')
 const functions = require('../util/functions')
-const ui = require('../util/ui')
+const css = require('../util/css')
 const localeProvider = require('../util/localeProvider')
 const rcMod = require('../util/resolveCommandModifiers')
 const xhrModifiers = require('../util/xhrModifiers')
@@ -27,6 +27,68 @@ module.exports = async () => {
     const locale = localeProvider.getLocale()
     let activeVideo = null
     let enforcingRate = false
+    let playbackRateOverlay = null
+    let playbackRateOverlayHideTimeout = null
+
+    css.inject('playback-rate', `
+        #vt-playback-rate-overlay {
+            position: fixed;
+            top: 32px;
+            right: 32px;
+            z-index: 2147483647;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            min-width: 210px;
+            padding: 14px 18px;
+            border-radius: 18px;
+            background: rgba(24, 24, 24, 0.92);
+            color: #fff;
+            pointer-events: none;
+            box-shadow: 0 18px 42px rgba(0, 0, 0, 0.35);
+            opacity: 0;
+            transform: translateY(-8px) scale(0.98);
+            transition: opacity 140ms ease, transform 140ms ease;
+            font-family: system-ui, sans-serif;
+        }
+
+        #vt-playback-rate-overlay.vt-visible {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+
+        .vt-playback-rate-badge {
+            flex: 0 0 auto;
+            min-width: 58px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.14);
+            font-size: 24px;
+            font-weight: 700;
+            line-height: 1;
+            text-align: center;
+        }
+
+        .vt-playback-rate-copy {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+
+        .vt-playback-rate-title {
+            font-size: 16px;
+            font-weight: 600;
+            line-height: 1.2;
+            opacity: 0.96;
+        }
+
+        .vt-playback-rate-subtitle {
+            font-size: 14px;
+            line-height: 1.2;
+            opacity: 0.72;
+        }
+    `)
 
     function clampPlaybackRate(rate) {
         return Math.min(maxPlaybackRate, Math.max(minPlaybackRate, rate))
@@ -54,7 +116,44 @@ module.exports = async () => {
     }
 
     function showPlaybackRateToast(rate) {
-        ui.toast('VacuumTube', `${locale.general.playback_rate}: ${formatPlaybackRate(rate)}x`)
+        const overlay = ensurePlaybackRateOverlay()
+        overlay.querySelector('.vt-playback-rate-badge').textContent = `${formatPlaybackRate(rate)}x`
+        overlay.querySelector('.vt-playback-rate-title').textContent = locale.general.playback_rate
+        overlay.querySelector('.vt-playback-rate-subtitle').textContent = 'VacuumTube'
+        overlay.classList.add('vt-visible')
+
+        clearTimeout(playbackRateOverlayHideTimeout)
+        playbackRateOverlayHideTimeout = setTimeout(() => {
+            overlay.classList.remove('vt-visible')
+            playbackRateOverlayHideTimeout = null
+        }, 1100)
+    }
+
+    function ensurePlaybackRateOverlay() {
+        if (playbackRateOverlay?.isConnected) return playbackRateOverlay
+
+        playbackRateOverlay = functions.el('div', {
+            id: 'vt-playback-rate-overlay',
+            ariaHidden: 'true'
+        }, [
+            functions.el('div', {
+                className: 'vt-playback-rate-badge',
+                textContent: `${formatPlaybackRate(getDesiredPlaybackRate())}x`
+            }),
+            functions.el('div', { className: 'vt-playback-rate-copy' }, [
+                functions.el('div', {
+                    className: 'vt-playback-rate-title',
+                    textContent: locale.general.playback_rate
+                }),
+                functions.el('div', {
+                    className: 'vt-playback-rate-subtitle',
+                    textContent: 'VacuumTube'
+                })
+            ])
+        ])
+
+        document.body.appendChild(playbackRateOverlay)
+        return playbackRateOverlay
     }
 
     function createPlaybackRateEndpoint(action) {
@@ -166,6 +265,8 @@ module.exports = async () => {
 
     await functions.waitForSelector(videoSelector)
     attachToVideo(document.querySelector(videoSelector))
+    await functions.waitForCondition(() => !!document.body)
+    ensurePlaybackRateOverlay()
 
     window.vtPlaybackRate = {
         get: getDesiredPlaybackRate,
